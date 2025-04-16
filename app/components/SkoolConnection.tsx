@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
-export default function SignIn() {
+export default function SkoolConnection() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,21 +12,51 @@ export default function SignIn() {
   const router = useRouter()
   const supabase = createClient()
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const { data: { session }, error: authError } = await supabase.auth.getSession()
+      if (authError || !session) {
+        router.push('/auth/signin')
+        return
+      }
+
+      // Save credentials
+      const { error: credentialsError } = await supabase
+        .from('skool_credentials')
+        .upsert({
+          user_id: session.user.id,
+          email,
+          password,
+        })
+
+      if (credentialsError) throw credentialsError
+
+      // Connect to Skool
+      const response = await fetch('/api/skool/automate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          action: 'connect',
+        }),
       })
 
-      if (error) throw error
+      const data = await response.json()
 
-      // Redirect to Skool connection page
-      router.push('/connect')
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to connect to Skool')
+      }
+
+      // Redirect to settings page
+      router.push('/settings')
     } catch (error: any) {
       setError(error.message)
     } finally {
@@ -38,7 +68,7 @@ export default function SignIn() {
     <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto">
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-2xl font-bold mb-6">Sign In</h2>
+          <h2 className="text-2xl font-bold mb-6">Connect to Skool</h2>
           
           {error && (
             <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-md">
@@ -46,10 +76,10 @@ export default function SignIn() {
             </div>
           )}
 
-          <form onSubmit={handleSignIn} className="space-y-4">
+          <form onSubmit={handleConnect} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Email
+                Skool Email
               </label>
               <input
                 type="email"
@@ -62,7 +92,7 @@ export default function SignIn() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Password
+                Skool Password
               </label>
               <input
                 type="password"
@@ -78,7 +108,7 @@ export default function SignIn() {
               disabled={loading}
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Connecting...' : 'Connect to Skool'}
             </button>
           </form>
         </div>
